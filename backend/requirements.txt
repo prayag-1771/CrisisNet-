@@ -8,6 +8,8 @@ alembic==1.13.2
 PyJWT==2.9.0
 passlib[bcrypt]==1.7.4
 langgraph==0.2.4
+langgraph-checkpoint-postgres==2.0.0
+psycopg[binary]==3.2.1
 langchain-core==0.2.33
 langchain-groq==0.1.9
 langchain-google-genai==1.0.10

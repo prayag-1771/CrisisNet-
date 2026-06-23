@@ -1,7 +1,12 @@
 """Human Review Queue API endpoints.
 
 Handles listing pending reviews, taking review actions, and
-tracking human override metrics.
+RESUMING the LangGraph pipeline after a human decision.
+
+When a reviewer submits an action, we:
+1. Record the review in the database
+2. Resume the interrupted graph using Command(resume=human_decision)
+3. The graph continues from the human_review node → router → response → end
 """
 
 import structlog
@@ -9,6 +14,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
+
+from langgraph.types import Command
 
 from app.api.schemas import HumanReviewAction, HumanReviewOut, QueueItem
 from app.core.security import get_current_user, require_role
@@ -19,6 +26,8 @@ from app.models.models import (
     Message,
     Escalation,
     AuditLog,
+    Response as ResponseModel,
+    RoutingHistory,
 )
 from app.api.websockets import manager
 
@@ -39,7 +48,6 @@ async def get_review_queue(
     - Severity is HIGH or CRITICAL
     - Classification confidence is below the threshold (< 0.75)
     """
-    # Find classifications that need review but haven't been reviewed yet
     reviewed_subquery = (
         select(HumanReview.classification_id)
         .distinct()
@@ -84,11 +92,12 @@ async def submit_review(
     """
     Submit a human review action on a classification.
 
-    Actions:
-    - Approve: Accept the AI classification as-is
-    - Escalate: Escalate to a higher priority
-    - Reject: Reject the classification entirely
-    - Reclassify: Change the severity level (must provide final_severity)
+    This endpoint does TWO things:
+    1. Records the human review in the database.
+    2. RESUMES the halted LangGraph pipeline by passing the human's
+       decision back into the graph via Command(resume=...).
+
+    The graph then continues: router → response_generator → validator → end.
     """
     # Find the classification
     result = await db.execute(
@@ -108,7 +117,7 @@ async def submit_review(
             detail="This classification has already been reviewed",
         )
 
-    # Create the review
+    # ── 1. Record the review in the database ──
     review = HumanReview(
         classification_id=classification_id,
         reviewer_id=current_user.id,
@@ -119,7 +128,6 @@ async def submit_review(
     )
     db.add(review)
 
-    # Create escalation record if needed
     if payload.action in ("Escalate", "Reclassify"):
         escalation = Escalation(
             message_id=classification.message_id,
@@ -128,7 +136,6 @@ async def submit_review(
         )
         db.add(escalation)
 
-    # Audit log — captures the delta between AI and human decision
     audit = AuditLog(
         actor_id=current_user.id,
         action="human_review_submitted",
@@ -138,7 +145,11 @@ async def submit_review(
             "action": payload.action,
             "ai_severity": classification.severity.value if hasattr(classification.severity, 'value') else classification.severity,
             "human_severity": payload.final_severity,
-            "is_override": classification.severity.value != payload.final_severity if hasattr(classification.severity, 'value') else classification.severity != payload.final_severity,
+            "is_override": (
+                classification.severity.value != payload.final_severity
+                if hasattr(classification.severity, 'value')
+                else classification.severity != payload.final_severity
+            ),
             "reason": payload.reason,
         },
     )
@@ -146,12 +157,73 @@ async def submit_review(
     await db.commit()
     await db.refresh(review)
 
+    # ── 2. Resume the halted LangGraph pipeline ──
+    message_id = classification.message_id
+    thread_config = {"configurable": {"thread_id": str(message_id)}}
+
+    try:
+        from app.agents.graph import build_crisis_graph, get_checkpointer
+
+        checkpointer = get_checkpointer()
+        crisis_graph = build_crisis_graph(checkpointer=checkpointer)
+
+        # The human_decision dict is what interrupt() returns inside the node
+        human_decision = {
+            "action": payload.action,
+            "final_severity": payload.final_severity,
+            "reason": payload.reason,
+            "reviewer_id": current_user.id,
+        }
+
+        # Resume the graph from the interrupt point
+        final_state = crisis_graph.invoke(
+            Command(resume=human_decision),
+            config=thread_config,
+        )
+
+        # Persist the remaining outputs (response, routing)
+        if final_state.get("response_text"):
+            response = ResponseModel(
+                message_id=message_id,
+                response_text=final_state["response_text"],
+                validator_passed=final_state.get("validator_passed", False),
+                retry_count=final_state.get("response_retries", 0),
+            )
+            db.add(response)
+
+        if final_state.get("routing_decision"):
+            routing = RoutingHistory(
+                message_id=message_id,
+                severity=final_state.get("human_classification") or final_state.get("ai_classification"),
+                route=final_state["routing_decision"],
+            )
+            db.add(routing)
+
+        await db.commit()
+
+        logger.info(
+            "pipeline_resumed_and_completed",
+            message_id=message_id,
+            human_action=payload.action,
+            final_severity=payload.final_severity,
+            routing=final_state.get("routing_decision"),
+        )
+
+    except Exception as e:
+        logger.error(
+            "pipeline_resume_error",
+            message_id=message_id,
+            error=str(e),
+        )
+        # The review is still recorded even if resume fails
+
     # Broadcast queue update to dashboard
     await manager.broadcast("queue_update", {
         "classification_id": classification_id,
         "action": payload.action,
         "final_severity": payload.final_severity,
         "reviewer_id": current_user.id,
+        "message_id": message_id,
     })
 
     logger.info(

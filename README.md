@@ -114,10 +114,13 @@ python -m app.data.seed
 ### 4. Access the Dashboard
 Open your browser and navigate to: **http://localhost:3000**
 
-**Demo Credentials:**
+**Demo Credentials (⚠️ Local development only):**
 * **Admin:** `admin@crisisnet.dev` / `admin1234`
 * **Reviewer:** `reviewer@crisisnet.dev` / `reviewer1234`
 * **Viewer:** `viewer@crisisnet.dev` / `viewer1234`
+
+> [!WARNING]
+> These are **hardcoded seed credentials for local development only**. They are stored in `backend/app/data/seed.py`, not in `.env`. If deploying publicly, you must either remove the seed script entirely or change the passwords to random values via environment variables. Never use default credentials in a deployed environment.
 
 ---
 

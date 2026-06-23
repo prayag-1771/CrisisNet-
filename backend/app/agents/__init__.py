@@ -1,4 +1,4 @@
 from app.agents.state import AgentState
-from app.agents.graph import crisis_graph, build_crisis_graph
+from app.agents.graph import build_crisis_graph, get_checkpointer
 
-__all__ = ["AgentState", "crisis_graph", "build_crisis_graph"]
+__all__ = ["AgentState", "build_crisis_graph", "get_checkpointer"]
