@@ -12,6 +12,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.api.websockets import router as ws_router
+from app.api.auth import router as auth_router
+from app.api.messages import router as messages_router
+from app.api.reviews import router as reviews_router
+from app.api.dashboard import router as dashboard_router
 from app.db.database import engine, Base
 
 logger = structlog.get_logger(__name__)
@@ -33,7 +37,8 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     description=(
         "Research Prototype — Not a real crisis service. "
-        "Multi-agent crisis triage pipeline using LangGraph."
+        "Multi-agent crisis triage pipeline using LangGraph. "
+        "All data is synthetic."
     ),
     version=settings.VERSION,
     docs_url="/docs",
@@ -50,6 +55,10 @@ app.add_middleware(
 )
 
 # ── Routers ──
+app.include_router(auth_router)
+app.include_router(messages_router)
+app.include_router(reviews_router)
+app.include_router(dashboard_router)
 app.include_router(ws_router, tags=["WebSockets"])
 
 

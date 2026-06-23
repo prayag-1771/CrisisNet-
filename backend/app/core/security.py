@@ -9,12 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.core.config import settings
+from app.db.database import get_db
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 
 # ── Password Utilities ──
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
@@ -25,6 +27,7 @@ def get_password_hash(password: str) -> str:
 
 
 # ── Token Creation ──
+
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
@@ -43,6 +46,7 @@ def create_refresh_token(data: dict) -> str:
 
 
 # ── Token Decoding ──
+
 
 def decode_token(token: str) -> dict:
     """Decode and validate a JWT token. Raises HTTPException on failure."""
@@ -63,13 +67,14 @@ def decode_token(token: str) -> dict:
 
 # ── Dependency: Get Current User ──
 
+
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
-    db: AsyncSession = Depends(None),  # Will be replaced by get_db at router level
+    db: AsyncSession = Depends(get_db),
 ):
     """
     FastAPI dependency that extracts the current user from the JWT token.
-    Must be used with `db` dependency override at the router level.
+    Properly wired with the get_db dependency.
     """
     from app.models.models import User  # Avoid circular import
 
@@ -80,7 +85,7 @@ async def get_current_user(
             detail="Invalid token type",
         )
 
-    user_id: int = payload.get("sub")
+    user_id = payload.get("sub")
     if user_id is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -99,6 +104,7 @@ async def get_current_user(
 
 
 # ── Dependency: Require Role ──
+
 
 def require_role(*allowed_roles: str):
     """
