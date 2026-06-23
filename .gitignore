@@ -1,0 +1,11 @@
+LEARN.md
+.env
+backend/.env
+frontend/.env
+frontend/.env.local
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
