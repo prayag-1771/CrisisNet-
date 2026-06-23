@@ -1,1 +1,33 @@
-from app.models.models import User, Message, Classification, HumanReview, RoutingHistory, Response, Outcome, AuditLog
+from app.models.models import (
+    User,
+    Message,
+    RedactedMessage,
+    Classification,
+    HumanReview,
+    Escalation,
+    RoutingHistory,
+    Response,
+    Outcome,
+    AnalyticsEvent,
+    AuditLog,
+    RoleEnum,
+    SeverityEnum,
+    MessageSourceEnum,
+)
+
+__all__ = [
+    "User",
+    "Message",
+    "RedactedMessage",
+    "Classification",
+    "HumanReview",
+    "Escalation",
+    "RoutingHistory",
+    "Response",
+    "Outcome",
+    "AnalyticsEvent",
+    "AuditLog",
+    "RoleEnum",
+    "SeverityEnum",
+    "MessageSourceEnum",
+]
