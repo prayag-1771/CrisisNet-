@@ -12,6 +12,8 @@ to the database. Resume is triggered via Command(resume=...).
 """
 
 from datetime import datetime, timezone
+import structlog
+from typing import Literal
 
 from langgraph.graph import StateGraph, END
 from langgraph.types import interrupt, Command
@@ -26,38 +28,28 @@ from app.agents.nodes import (
     response_generator_node,
     response_validator_node,
     outcome_logger_node,
+    summarizer_node,
 )
 from app.core.config import settings
+
+logger = structlog.get_logger(__name__)
 
 
 # ── Conditional Edge Functions ──
 
 
-def should_escalate_to_human(state: AgentState) -> str:
-    """
-    Confidence gate + critical check combined.
-
-    Routes to 'human_review' if:
-      - severity is HIGH or CRITICAL
-      - OR confidence is below the configured threshold
-
-    Otherwise routes to 'router' to continue automated processing.
-    """
+def should_require_human_review(state: AgentState) -> Literal["human_review", "router"]:
+    """Conditional edge: halts for human review if needed, else proceeds to routing."""
     if state.get("requires_human_review", False):
         return "human_review"
     return "router"
 
 
-def should_retry_response(state: AgentState) -> str:
-    """
-    After the response validator, decide what to do:
-      - If passed → outcome_logger
-      - If failed and retries < max → response_generator (retry)
-      - If failed and retries >= max → outcome_logger (log as failed)
-    """
+def validator_retry_loop(state: AgentState) -> Literal["outcome_logger", "response_generator", "human_review"]:
+    """Conditional edge: handles response validation and retries."""
     if state.get("validator_passed", False):
         return "outcome_logger"
-
+    
     retries = state.get("response_retries", 0)
     if retries < settings.MAX_RESPONSE_RETRIES:
         return "response_generator"
@@ -169,6 +161,7 @@ def build_crisis_graph(checkpointer=None):
     graph.add_node("response_generator", response_generator_node)
     graph.add_node("response_validator", response_validator_node)
     graph.add_node("outcome_logger", outcome_logger_node)
+    graph.add_node("summarizer", summarizer_node)
 
     # Define edges
     graph.set_entry_point("pii_scrubber")
@@ -201,7 +194,8 @@ def build_crisis_graph(checkpointer=None):
         },
     )
 
-    graph.add_edge("outcome_logger", END)
+    graph.add_edge("outcome_logger", "summarizer")
+    graph.add_edge("summarizer", END)
 
     # Use provided checkpointer
     return graph.compile(checkpointer=checkpointer)

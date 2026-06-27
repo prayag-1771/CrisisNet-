@@ -40,6 +40,17 @@ export function getAccessToken() {
   return accessToken;
 }
 
+export function getUserRole(): string | null {
+  if (!accessToken) return null;
+  try {
+    const payload = accessToken.split(".")[1];
+    const decoded = JSON.parse(atob(payload));
+    return decoded.role || null;
+  } catch (err) {
+    return null;
+  }
+}
+
 // ── Fetch Wrapper ──
 
 async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {

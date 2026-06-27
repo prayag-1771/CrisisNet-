@@ -11,6 +11,8 @@ import MessageList from "../components/MessageList";
 import Analytics from "../components/Analytics";
 import LoginScreen from "../components/LoginScreen";
 
+import { useRouter } from "next/navigation";
+
 import {
   login,
   getDashboardStats,
@@ -22,10 +24,12 @@ import {
   submitReview,
   connectWebSocket,
   getAccessToken,
+  getUserRole,
   clearTokens,
 } from "../lib/api";
 
 export default function Home() {
+  const router = useRouter();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
@@ -44,15 +48,27 @@ export default function Home() {
   useEffect(() => {
     // Check if we have a token on load
     if (getAccessToken()) {
+      const role = getUserRole();
+      if (role === "viewer" || role === "user") {
+        router.push("/chat");
+        return;
+      }
       setIsAuthenticated(true);
       fetchAllData();
     }
-  }, []);
+  }, [router]);
 
   const handleLogin = async (email: string, pass: string) => {
     try {
       setLoginError(null);
       await login(email, pass);
+      
+      const role = getUserRole();
+      if (role === "viewer" || role === "user") {
+        router.push("/chat");
+        return;
+      }
+      
       setIsAuthenticated(true);
       fetchAllData();
     } catch (err: any) {
