@@ -162,44 +162,46 @@ async def submit_review(
     thread_config = {"configurable": {"thread_id": str(message_id)}}
 
     try:
-        from app.agents.graph import build_crisis_graph, get_checkpointer
+        from langgraph.checkpoint.postgres import PostgresSaver
+        from app.core.config import settings
+        from app.agents.graph import build_crisis_graph
 
-        checkpointer = get_checkpointer()
-        crisis_graph = build_crisis_graph(checkpointer=checkpointer)
+        with PostgresSaver.from_conn_string(settings.DATABASE_SYNC_URL) as checkpointer:
+            crisis_graph = build_crisis_graph(checkpointer=checkpointer)
 
-        # The human_decision dict is what interrupt() returns inside the node
-        human_decision = {
-            "action": payload.action,
-            "final_severity": payload.final_severity,
-            "reason": payload.reason,
-            "reviewer_id": current_user.id,
-        }
+            # The human_decision dict is what interrupt() returns inside the node
+            human_decision = {
+                "action": payload.action,
+                "final_severity": payload.final_severity,
+                "reason": payload.reason,
+                "reviewer_id": current_user.id,
+            }
 
-        # Resume the graph from the interrupt point
-        final_state = crisis_graph.invoke(
-            Command(resume=human_decision),
-            config=thread_config,
-        )
-
-        # Persist the remaining outputs (response, routing)
-        if final_state.get("response_text"):
-            response = ResponseModel(
-                message_id=message_id,
-                response_text=final_state["response_text"],
-                validator_passed=final_state.get("validator_passed", False),
-                retry_count=final_state.get("response_retries", 0),
+            # Resume the graph from the interrupt point
+            final_state = crisis_graph.invoke(
+                Command(resume=human_decision),
+                config=thread_config,
             )
-            db.add(response)
 
-        if final_state.get("routing_decision"):
-            routing = RoutingHistory(
-                message_id=message_id,
-                severity=final_state.get("human_classification") or final_state.get("ai_classification"),
-                route=final_state["routing_decision"],
-            )
-            db.add(routing)
+            # Persist the remaining outputs (response, routing)
+            if final_state.get("response_text"):
+                response = ResponseModel(
+                    message_id=message_id,
+                    response_text=final_state["response_text"],
+                    validator_passed=final_state.get("validator_passed", False),
+                    retry_count=final_state.get("response_retries", 0),
+                )
+                db.add(response)
 
-        await db.commit()
+            if final_state.get("routing_decision"):
+                routing = RoutingHistory(
+                    message_id=message_id,
+                    severity=final_state.get("human_classification") or final_state.get("ai_classification"),
+                    route=final_state["routing_decision"],
+                )
+                db.add(routing)
+
+            await db.commit()
 
         logger.info(
             "pipeline_resumed_and_completed",

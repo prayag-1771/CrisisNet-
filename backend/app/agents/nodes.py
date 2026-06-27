@@ -95,7 +95,7 @@ Guidelines (safety-first — minimize false negatives):
 When uncertain, classify HIGHER, not lower. Err on the side of caution.
 """
 
-MODEL_NAME = "groq/llama3-70b-8192"
+MODEL_NAME = "groq/llama-3.3-70b-versatile"
 
 
 def severity_classifier_node(state: AgentState) -> dict:

@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from langgraph.graph import StateGraph, END
 from langgraph.types import interrupt, Command
 from langgraph.checkpoint.postgres import PostgresSaver
+from contextlib import contextmanager
 
 from app.agents.state import AgentState
 from app.agents.nodes import (
@@ -134,14 +135,15 @@ def human_review_node(state: AgentState) -> dict:
 # ── Checkpointer Factory ──
 
 
-def get_checkpointer() -> PostgresSaver:
+@contextmanager
+def get_checkpointer():
     """
     Create a PostgresSaver checkpointer using the sync database URL.
     LangGraph's checkpointer uses psycopg (sync), not asyncpg.
     """
-    checkpointer = PostgresSaver.from_conn_string(settings.DATABASE_SYNC_URL)
-    checkpointer.setup()  # Creates the checkpoint tables if they don't exist
-    return checkpointer
+    with PostgresSaver.from_conn_string(settings.DATABASE_SYNC_URL) as checkpointer:
+        checkpointer.setup()  # Creates the checkpoint tables if they don't exist
+        yield checkpointer
 
 
 # ── Build the Graph ──
@@ -201,12 +203,9 @@ def build_crisis_graph(checkpointer=None):
 
     graph.add_edge("outcome_logger", END)
 
-    # Use provided checkpointer or create one
-    if checkpointer is None:
-        try:
-            checkpointer = get_checkpointer()
-        except Exception:
-            # If DB is not available (e.g., during import/tests), compile without checkpointer
-            pass
-
+    # Use provided checkpointer
     return graph.compile(checkpointer=checkpointer)
+
+
+# Module-level compiled graph without checkpointer for basic/testing imports
+crisis_graph = build_crisis_graph()

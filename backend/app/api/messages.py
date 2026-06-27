@@ -139,35 +139,33 @@ async def submit_message(
     result = {}
 
     try:
-        checkpointer = get_checkpointer()
-        crisis_graph = build_crisis_graph(checkpointer=checkpointer)
+        from langgraph.checkpoint.postgres import PostgresSaver
+        from app.core.config import settings
+        from app.agents.graph import build_crisis_graph
 
-        # Run the graph — this may halt at interrupt()
-        result = crisis_graph.invoke(initial_state, config=thread_config)
+        with PostgresSaver.from_conn_string(settings.DATABASE_SYNC_URL) as checkpointer:
+            checkpointer.setup()
+            crisis_graph = build_crisis_graph(checkpointer=checkpointer)
 
-        # Update message with redacted text
-        message.redacted_text = result.get("redacted_text")
+            # Run the graph — this may halt at interrupt()
+            result = crisis_graph.invoke(initial_state, config=thread_config)
 
-        # Persist all graph outputs
-        records = _persist_graph_results(result, message, db)
-        for rec in records:
-            db.add(rec)
-        await db.commit()
+            # Update message with redacted text
+            message.redacted_text = result.get("redacted_text")
 
-    except Exception as e:
-        error_msg = str(e)
-        logger.error("pipeline_error", message_id=message.id, error=error_msg)
+            # Persist all graph outputs
+            records = _persist_graph_results(result, message, db)
+            for rec in records:
+                db.add(rec)
+            await db.commit()
 
-    # Check if the graph was interrupted (pending human review)
-    # LangGraph returns the state at the interrupt point, and the
-    # graph's get_state() will show tasks with interrupts.
-    try:
-        graph_state = crisis_graph.get_state(thread_config)
-        if graph_state and graph_state.tasks:
-            for task in graph_state.tasks:
-                if hasattr(task, 'interrupts') and task.interrupts:
-                    pipeline_status = "pending_review"
-                    break
+            # Check if the graph was interrupted (pending human review)
+            graph_state = crisis_graph.get_state(thread_config)
+            if graph_state and graph_state.tasks:
+                for task in graph_state.tasks:
+                    if hasattr(task, 'interrupts') and task.interrupts:
+                        pipeline_status = "pending_review"
+                        break
 
         if pipeline_status == "pending_review":
             # The graph halted — save what we have so far
@@ -198,9 +196,9 @@ async def submit_message(
                 severity=result.get("ai_classification"),
                 confidence=result.get("confidence"),
             )
-    except Exception:
-        # If we can't check state, the pipeline either completed or errored
-        pass
+    except Exception as exc:
+        logger.error("pipeline_error", message_id=message.id, error=str(exc))
+        pipeline_status = "error"
 
     # Broadcast to WebSocket clients
     await manager.broadcast("new_message", {

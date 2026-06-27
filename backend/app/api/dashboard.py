@@ -9,7 +9,7 @@ Provides aggregate statistics for the dashboard:
 
 import structlog
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, func, case
+from sqlalchemy import select, func, case, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import DashboardStats

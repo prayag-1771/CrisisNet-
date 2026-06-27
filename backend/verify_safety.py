@@ -61,45 +61,45 @@ def check_1_interrupt():
 
     from langgraph.types import Command
 
-    checkpointer = get_checkpointer()
-    graph = build_crisis_graph(checkpointer=checkpointer)
-    thread_id = "verify_check_1"
-    config = {"configurable": {"thread_id": thread_id}}
+    with get_checkpointer() as checkpointer:
+        graph = build_crisis_graph(checkpointer=checkpointer)
+        thread_id = "verify_check_1"
+        config = {"configurable": {"thread_id": thread_id}}
 
-    state = make_initial_state(
-        9001,
-        "I have a plan to end my life tonight. I've gathered everything I need.",
-    )
+        state = make_initial_state(
+            9001,
+            "I have a plan to end my life tonight. I've gathered everything I need.",
+        )
 
-    # Run — should halt at interrupt
-    result = graph.invoke(state, config=config)
+        # Run — should halt at interrupt
+        result = graph.invoke(state, config=config)
 
-    # Verify it halted
-    graph_state = graph.get_state(config)
-    has_interrupt = False
-    if graph_state and graph_state.tasks:
-        for task in graph_state.tasks:
-            if hasattr(task, 'interrupts') and task.interrupts:
-                has_interrupt = True
+        # Verify it halted
+        graph_state = graph.get_state(config)
+        has_interrupt = False
+        if graph_state and graph_state.tasks:
+            for task in graph_state.tasks:
+                if hasattr(task, 'interrupts') and task.interrupts:
+                    has_interrupt = True
 
-    assert has_interrupt, "FAIL: Graph did NOT halt at interrupt!"
-    assert result.get("response_text") is None, "FAIL: Response was generated before human review!"
-    assert result.get("routing_decision") is None, "FAIL: Routing happened before human review!"
-    print("  ✓ Graph halted at interrupt (no response, no routing)")
+        assert has_interrupt, "FAIL: Graph did NOT halt at interrupt!"
+        assert result.get("response_text") is None, "FAIL: Response was generated before human review!"
+        assert result.get("routing_decision") is None, "FAIL: Routing happened before human review!"
+        print("  ✓ Graph halted at interrupt (no response, no routing)")
 
-    # Verify classification happened BEFORE the interrupt
-    assert result.get("ai_classification") is not None, "FAIL: No classification before interrupt!"
-    assert result.get("redacted_text") is not None, "FAIL: No PII scrubbing before interrupt!"
-    print(f"  ✓ Classification ({result['ai_classification']}) and PII scrubbing completed before halt")
+        # Verify classification happened BEFORE the interrupt
+        assert result.get("ai_classification") is not None, "FAIL: No classification before interrupt!"
+        assert result.get("redacted_text") is not None, "FAIL: No PII scrubbing before interrupt!"
+        print(f"  ✓ Classification ({result['ai_classification']}) and PII scrubbing completed before halt")
 
-    # Now resume with a human decision
-    human_decision = {
-        "action": "Approve",
-        "final_severity": "CRITICAL",
-        "reason": "Verified by safety check script",
-    }
+        # Now resume with a human decision
+        human_decision = {
+            "action": "Approve",
+            "final_severity": "CRITICAL",
+            "reason": "Verified by safety check script",
+        }
 
-    final = graph.invoke(Command(resume=human_decision), config=config)
+        final = graph.invoke(Command(resume=human_decision), config=config)
 
     # Verify it completed
     assert final.get("routing_decision") is not None, "FAIL: No routing after resume!"
