@@ -132,8 +132,9 @@ async def submit_message(
         "audit_trail": [],
     }
 
-    # Thread ID = message ID. This is the key for checkpointing.
-    thread_config = {"configurable": {"thread_id": str(message.id)}}
+    # Thread ID = session_id if provided (for chatbots), else message ID.
+    thread_id = payload.session_id if payload.session_id else str(message.id)
+    thread_config = {"configurable": {"thread_id": thread_id}}
 
     pipeline_status = "completed"
     result = {}

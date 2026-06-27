@@ -197,11 +197,18 @@ def response_generator_node(state: AgentState) -> dict:
     """Generate an empathetic, advisory-only response. Uses Gemini for nuance."""
     text = state.get("redacted_text") or state["original_text"]
     severity = state.get("human_classification") or state["ai_classification"]
+    summary = state.get("chat_summary") or ""
 
-    prompt = ChatPromptTemplate.from_messages([
+    prompt_messages = [
         ("system", RESPONSE_SYSTEM_PROMPT),
-        ("human", "Severity: {severity}\nMessage: {text}\n\nGenerate a compassionate response."),
-    ])
+    ]
+    
+    if summary:
+        prompt_messages.append(("system", f"Previous Conversation Summary:\n{summary}"))
+        
+    prompt_messages.append(("human", "Severity: {severity}\nNew Message: {text}\n\nGenerate a compassionate response."))
+    
+    prompt = ChatPromptTemplate.from_messages(prompt_messages)
 
     llm = get_reasoning_llm()
     chain = prompt | llm
@@ -307,5 +314,56 @@ def outcome_logger_node(state: AgentState) -> dict:
                 "response_delivered": state.get("validator_passed", False),
                 "human_reviewed": state.get("human_classification") is not None,
             },
+        }],
+    }
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Node 7: Summarizer (For Chat Memory)
+# ──────────────────────────────────────────────────────────────────────
+
+SUMMARIZER_PROMPT = """\
+You are an expert summarizer for a crisis counseling application.
+Your goal is to maintain a running summary of the conversation so far.
+Update the previous summary by incorporating the new User message and the new AI response.
+
+Rules:
+1. Keep the summary concise but retain all clinical details, risk indicators, and context.
+2. Output ONLY the new updated summary text.
+3. Do not include introductory phrases like "Here is the summary".
+"""
+
+
+def summarizer_node(state: AgentState) -> dict:
+    """Updates the running chat summary with the latest exchange."""
+    old_summary = state.get("chat_summary") or ""
+    new_message = state.get("redacted_text") or state["original_text"]
+    new_response = state.get("response_text", "")
+
+    # Only summarize if we actually generated a response and it passed validation
+    if not state.get("validator_passed", False):
+        return {}
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", SUMMARIZER_PROMPT),
+        ("human", "Previous Summary:\n{old_summary}\n\nNew User Message:\n{new_message}\n\nNew AI Response:\n{new_response}"),
+    ])
+
+    llm = get_fast_llm()
+    chain = prompt | llm
+    result = chain.invoke({
+        "old_summary": old_summary if old_summary else "No previous history.",
+        "new_message": new_message,
+        "new_response": new_response
+    })
+
+    updated_summary = result.content.strip()
+
+    return {
+        "chat_summary": updated_summary,
+        "audit_trail": [{
+            "node": "summarizer",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "action": "updated_chat_summary",
         }],
     }
