@@ -7,7 +7,7 @@ import { Send, Loader2, User, Bot, AlertTriangle, ShieldCheck } from "lucide-rea
 import {
   getAccessToken,
   clearTokens,
-  submitMessage,
+  submitChatMessage,
   getMessage,
   connectWebSocket,
 } from "../../lib/api";
@@ -133,26 +133,7 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, newUserMsg]);
 
     try {
-      // Overriding the default api.ts submitMessage to include session_id
-      // For this, we'll use fetch directly since api.ts doesn't expose session_id arg yet
-      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const token = getAccessToken();
-      
-      const res = await fetch(`${API_BASE}/api/v1/messages/`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({ 
-          text: userText, 
-          source: "chatbot",
-          session_id: sessionId.current 
-        }),
-      });
-
-      if (!res.ok) throw new Error("Failed to send message");
-      const data = await res.json();
+      const data = await submitChatMessage(userText, sessionId.current);
 
       setMessages((prev) =>
         prev.map((m) =>

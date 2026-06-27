@@ -141,6 +141,15 @@ export async function submitMessage(text: string) {
   return res.json();
 }
 
+export async function submitChatMessage(text: string, sessionId: string) {
+  const res = await apiFetch("/api/v1/messages/", {
+    method: "POST",
+    body: JSON.stringify({ text, source: "chatbot", session_id: sessionId }),
+  });
+  if (!res.ok) throw new Error("Failed to submit message");
+  return res.json();
+}
+
 export async function getMessages(severity?: string, skip = 0, limit = 50) {
   let path = `/api/v1/messages/?skip=${skip}&limit=${limit}`;
   if (severity) path += `&severity=${severity}`;
