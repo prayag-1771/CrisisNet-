@@ -43,7 +43,15 @@ export function getAccessToken() {
 export function getUserRole(): string | null {
   if (!accessToken) return null;
   try {
-    const payload = accessToken.split(".")[1];
+    let payload = accessToken.split(".")[1];
+    // Convert Base64Url to Base64
+    payload = payload.replace(/-/g, "+").replace(/_/g, "/");
+    // Add padding if necessary
+    const pad = payload.length % 4;
+    if (pad) {
+      if (pad === 1) throw new Error("InvalidLengthError");
+      payload += new Array(5 - pad).join("=");
+    }
     const decoded = JSON.parse(atob(payload));
     return decoded.role || null;
   } catch (err) {
