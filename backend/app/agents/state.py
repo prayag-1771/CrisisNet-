@@ -20,6 +20,7 @@ class AgentState(TypedDict):
     message_id: int
     original_text: str
     redacted_text: Optional[str]
+    chat_summary: Optional[str]  # Running summary of previous messages for memory
 
     # ── Classification ──
     ai_classification: Optional[str]  # LOW | MEDIUM | HIGH | CRITICAL

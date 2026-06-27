@@ -50,8 +50,9 @@ class MessageSubmit(BaseModel):
     text: str = Field(min_length=1, max_length=5000)
     source: str = Field(
         default="demo_simulator",
-        pattern="^(synthetic_seed|demo_simulator)$",
+        pattern="^(synthetic_seed|demo_simulator|chatbot)$",
     )
+    session_id: Optional[str] = None
 
 
 class MessageOut(BaseModel):
